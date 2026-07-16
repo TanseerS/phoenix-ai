@@ -15,5 +15,6 @@ export async function getConfig() {
     dbPassword: env('DB_PASSWORD'),
     dbName: env('DB_NAME'),
     sesSender: env('SES_SENDER'),
+    reportRecipient: env('REPORT_RECIPIENT'),
   };
 }

@@ -74,6 +74,17 @@ export async function logRun({ reposScanned, status, error }) {
   );
 }
 
+// Scores from the most recent run before today, as Map(repo_name -> score).
+export async function getPreviousScores() {
+  const db = await getPool();
+  const [rows] = await db.execute(
+    `SELECT repo_name, health_score
+     FROM project_scores
+     WHERE run_date = (SELECT MAX(run_date) FROM project_scores WHERE run_date < CURDATE())`
+  );
+  return new Map(rows.map((row) => [row.repo_name, row.health_score]));
+}
+
 export async function getScoreHistory(repoName, days) {
   const db = await getPool();
   const [rows] = await db.execute(

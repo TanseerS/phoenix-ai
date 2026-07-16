@@ -2,7 +2,9 @@ import { getConfig } from './utils/config.js';
 import { scanRepositories } from './connectors/github/scanner.js';
 import { scoreRepository } from './analysis/healthEngine.js';
 import { analyzeRepositories } from './services/bedrock.js';
-import { saveScores, logRun } from './services/db.js';
+import { saveScores, logRun, getPreviousScores } from './services/db.js';
+import { buildReportHtml, buildReportText } from './reports/emailTemplate.js';
+import { sendReport } from './services/email.js';
 
 async function safeLogRun(entry) {
   try {
@@ -10,6 +12,17 @@ async function safeLogRun(entry) {
   } catch (err) {
     console.error(`db: logRun failed: ${err.message}`);
   }
+}
+
+function buildSubject(scored, avgScore) {
+  if (scored.length === 0) {
+    return 'Phoenix: no repositories scanned';
+  }
+  if (scored.every(({ health }) => health.score >= 75)) {
+    return `Phoenix: all projects healthy (avg ${avgScore}/100)`;
+  }
+  const worst = scored.reduce((min, entry) => (entry.health.score < min.health.score ? entry : min));
+  return `Phoenix: ${worst.repo.name} needs attention (avg ${avgScore}/100)`;
 }
 
 export const handler = async (event, context) => {
@@ -34,6 +47,17 @@ export const handler = async (event, context) => {
     }
     for (const repo of failed) {
       console.error(`${repo.fullName.padEnd(45)} scan failed: ${repo.error}`);
+    }
+
+    let previousScores = new Map();
+    try {
+      previousScores = await getPreviousScores();
+    } catch (err) {
+      console.error(`db: getPreviousScores failed: ${err.message}`);
+    }
+    for (const entry of scored) {
+      const previous = previousScores.get(entry.repo.fullName);
+      entry.scoreDelta = previous === undefined ? null : entry.health.score - previous;
     }
 
     let analysis = { portfolio_summary: null, repos: [] };
@@ -86,7 +110,34 @@ export const handler = async (event, context) => {
       ? Math.round(scored.reduce((sum, { health }) => sum + health.score, 0) / scored.length)
       : 0;
 
-    const status = analysisOk ? 'success' : 'partial';
+    const runDate = new Date().toISOString();
+    const reportInput = {
+      runDate,
+      portfolioSummary: analysis.portfolio_summary,
+      repos: scored.map((entry) => ({
+        name: entry.repo.fullName,
+        score: entry.health.score,
+        flags: entry.health.flags,
+        diagnosis: analysisByName.get(entry.repo.name)?.diagnosis ?? null,
+        nextBestAction: analysisByName.get(entry.repo.name)?.next_best_action ?? null,
+        scoreDelta: entry.scoreDelta,
+      })),
+    };
+
+    let emailOk = true;
+    try {
+      await sendReport({
+        subject: buildSubject(scored, avgScore),
+        html: buildReportHtml(reportInput),
+        text: buildReportText(reportInput),
+      });
+      console.log('email: report sent');
+    } catch (err) {
+      emailOk = false;
+      console.error(`email: sendReport failed: ${err.message}`);
+    }
+
+    const status = analysisOk && emailOk ? 'success' : 'partial';
     console.log(
       `Phoenix run finished: ${scored.length} repos scored, ${failed.length} scan failures, ` +
         `avgScore=${avgScore}, status=${status}`
