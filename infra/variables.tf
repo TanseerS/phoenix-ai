@@ -19,3 +19,20 @@ variable "ses_sender_email" {
   description = "Verified SES identity used as the sender of the nightly report"
   type        = string
 }
+
+variable "github_token" {
+  description = "GitHub personal access token used to scan repositories"
+  type        = string
+  sensitive   = true
+}
+
+variable "report_recipient" {
+  description = "Email address that receives the nightly report"
+  type        = string
+}
+
+variable "bedrock_model_id" {
+  description = "Bedrock model ID used for repository analysis"
+  type        = string
+  default     = "apac.amazon.nova-lite-v1:0"
+}

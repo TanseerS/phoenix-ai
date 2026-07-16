@@ -9,14 +9,30 @@ the architecture is visible in the code.
 ## What it defines
 
 - **Lambda** `phoenix-agent` — Node.js 22, arm64, packaged from `../server`
-  via the `archive_file` data source
+  via the `archive_file` data source; all configuration (GitHub token, DB
+  credentials, email addresses, Bedrock model ID) is passed as environment
+  variables
 - **EventBridge Scheduler** `phoenix-daily-run` — daily at 1:00 PM
   Asia/Kolkata, invoking the Lambda with `{"source": "scheduler"}`
-- **RDS MySQL** `phoenix-db` — db.t4g.micro, 20 GB gp3 (demo-only network
-  configuration; see the comment in `main.tf`)
-- **Secrets Manager** `phoenix/config` — secret container only; values are
-  set manually and never appear in code
+- **RDS MySQL** `phoenix-db` — db.t4g.micro, 20 GB gp3
 - IAM roles and policies for the Lambda and the scheduler
+
+## Manual prerequisites
+
+Two dependencies are not fully managed by this Terraform and must be set up
+in the console before applying:
+
+- **SES identities** — the sender address (and the recipient too, while the
+  account is in the SES sandbox) must be verified manually in SES.
+- **Bedrock model access** — access to Amazon Nova Lite must be enabled
+  manually in the Bedrock console for the region.
+
+## Network warning
+
+The RDS security group intentionally allows inbound MySQL (3306) from
+`0.0.0.0/0` and the instance is publicly accessible. This is a demo-only
+configuration kept for easy inspection of the data; production should use
+private subnets with ingress restricted to the Lambda's security group.
 
 ## How to apply
 
@@ -27,14 +43,9 @@ terraform plan   # review what would be created
 terraform apply
 ```
 
-You will need a `terraform.tfvars` providing `db_username`, `db_password`,
-and `ses_sender_email` (region defaults to `ap-south-1`):
-
-```hcl
-db_username      = "phoenix_admin"
-db_password      = "..."
-ses_sender_email = "you@example.com"
-```
+Copy `terraform.tfvars.example` to `terraform.tfvars` and fill in real
+values (`region` defaults to `ap-south-1`, `bedrock_model_id` defaults to
+`apac.amazon.nova-lite-v1:0`).
 
 ## Git hygiene
 

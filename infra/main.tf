@@ -1,5 +1,3 @@
-data "aws_caller_identity" "current" {}
-
 # ---------------------------------------------------------------------------
 # Lambda function
 # ---------------------------------------------------------------------------
@@ -37,40 +35,27 @@ resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-resource "aws_iam_role_policy" "lambda_secrets" {
-  name = "phoenix-read-config-secret"
-  role = aws_iam_role.lambda.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect   = "Allow"
-        Action   = "secretsmanager:GetSecretValue"
-        Resource = "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:phoenix/config-*"
-      }
-    ]
-  })
-}
-
 resource "aws_iam_role_policy" "lambda_bedrock" {
-  name = "phoenix-invoke-bedrock"
+  name = "phoenix-bedrock-invoke"
   role = aws_iam_role.lambda.id
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        Effect   = "Allow"
-        Action   = "bedrock:InvokeModel"
-        Resource = "arn:aws:bedrock:${var.aws_region}::foundation-model/amazon.nova-lite-v1:0"
+        Effect = "Allow"
+        Action = "bedrock:InvokeModel"
+        Resource = [
+          "arn:aws:bedrock:*::foundation-model/amazon.nova-lite-v1:0",
+          "arn:aws:bedrock:*:*:inference-profile/apac.amazon.nova-lite-v1:0",
+        ]
       }
     ]
   })
 }
 
 resource "aws_iam_role_policy" "lambda_ses" {
-  name = "phoenix-send-email"
+  name = "phoenix-ses-send"
   role = aws_iam_role.lambda.id
 
   policy = jsonencode({
@@ -79,7 +64,7 @@ resource "aws_iam_role_policy" "lambda_ses" {
       {
         Effect   = "Allow"
         Action   = "ses:SendEmail"
-        Resource = "arn:aws:ses:${var.aws_region}:${data.aws_caller_identity.current.account_id}:identity/${var.ses_sender_email}"
+        Resource = "*"
       }
     ]
   })
@@ -97,6 +82,21 @@ resource "aws_lambda_function" "phoenix" {
 
   filename         = data.archive_file.lambda_zip.output_path
   source_code_hash = data.archive_file.lambda_zip.output_base64sha256
+
+  environment {
+    variables = {
+      GITHUB_TOKEN = var.github_token
+      # address is the hostname alone; the endpoint attribute appends ":3306",
+      # which the mysql2 host option would not accept
+      DB_HOST          = aws_db_instance.phoenix.address
+      DB_USER          = var.db_username
+      DB_PASSWORD      = var.db_password
+      DB_NAME          = "phoenix"
+      SES_SENDER       = var.ses_sender_email
+      REPORT_RECIPIENT = var.report_recipient
+      BEDROCK_MODEL_ID = var.bedrock_model_id
+    }
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -205,14 +205,4 @@ resource "aws_db_instance" "phoenix" {
 
   skip_final_snapshot     = true
   backup_retention_period = 0
-}
-
-# ---------------------------------------------------------------------------
-# Secrets Manager
-# ---------------------------------------------------------------------------
-
-# Secret values (GitHub token, DB credentials, report recipient) are set
-# manually in the console — they are never stored in this code or in state.
-resource "aws_secretsmanager_secret" "phoenix_config" {
-  name = "phoenix/config"
 }

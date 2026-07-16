@@ -1,0 +1,10 @@
+# Copy to terraform.tfvars and fill in real values.
+# terraform.tfvars is gitignored — real values must NEVER be committed.
+
+aws_region       = "ap-south-1"
+db_username      = "phoenix_admin"
+db_password      = "change-me"
+ses_sender_email = "sender@example.com"
+github_token     = "ghp_xxxxxxxxxxxxxxxxxxxx"
+report_recipient = "you@example.com"
+bedrock_model_id = "apac.amazon.nova-lite-v1:0"
