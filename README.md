@@ -14,6 +14,8 @@ If one step degrades — a repo fails to scan, the model returns something unpar
 
 ## Architecture
 
+![Phoenix architecture on AWS](assets/architecture-diagram.png)
+
 ```
 EventBridge Scheduler (daily, 1:00 PM Asia/Kolkata)
         |
@@ -41,6 +43,46 @@ EventBridge Scheduler (daily, 1:00 PM Asia/Kolkata)
 ## How it's triggered
 
 Phoenix runs unattended. EventBridge Scheduler invokes the Lambda function every day at 1:00 PM IST; no manual step is involved. The scheduler passes a small JSON payload identifying itself as the source, and the function does the rest: scan, score, analyze, store, email.
+
+The schedule in EventBridge Scheduler, with the Asia/Kolkata execution timezone and the next trigger dates:
+
+![EventBridge Scheduler schedule for the daily run](assets/eventbridge-schedule-ss.png)
+
+## Results
+
+The report email delivered by SES, received at 01:04 IST — minutes after the scheduled trigger fired (receive time highlighted). The subject names the worst repository and the average score, and the cards are sorted worst first with their flags:
+
+![Phoenix daily report email received in Gmail](assets/email-ss-1.png)
+
+The rest of the same report, scrolled down — scores climb toward the healthier end of the portfolio:
+
+![Phoenix daily report email, remaining repositories](assets/email-ss-2.png)
+
+A scheduled run in CloudWatch: the function starts, scans 13 repositories, analyzes 10, and logs a score line per repo:
+
+![CloudWatch log events from a scheduled run](assets/cloudwatch-triggered-by-eventbridge-ss.png)
+
+The Lambda's log group with the run's log stream:
+
+![CloudWatch log group for phoenix-agent](assets/cloudwatch-time-log-ss.png)
+
+Daily scores and metrics stored in the `project_scores` table on RDS:
+
+![Daily scores stored in MySQL](assets/db-ss.png)
+
+## Deployed resources
+
+The Lambda function with the project source deployed:
+
+![phoenix-agent Lambda function](assets/lambda-ss.png)
+
+The RDS MySQL instance:
+
+![phoenix-db RDS instance](assets/rds-ss.png)
+
+Verified SES identities used for sending the report:
+
+![Verified SES identities](assets/ses-email-ss.png)
 
 ## What the email report contains
 
