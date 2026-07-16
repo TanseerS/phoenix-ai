@@ -1,6 +1,9 @@
 import { BedrockRuntimeClient, ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
 
-const client = new BedrockRuntimeClient({});
+// When BEDROCK_REGION is unset, the SDK falls back to the Lambda's own
+// region via AWS_REGION.
+const bedrockRegion = (process.env.BEDROCK_REGION ?? '').trim();
+const client = new BedrockRuntimeClient(bedrockRegion ? { region: bedrockRegion } : {});
 
 const SYSTEM_PROMPT =
   "You are Phoenix, an engineering advisor reviewing a developer's GitHub portfolio. " +
