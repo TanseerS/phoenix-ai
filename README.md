@@ -14,7 +14,7 @@ If one step degrades — a repo fails to scan, the model returns something unpar
 
 ## Architecture
 
-![Phoenix architecture on AWS](assets/architecture-diagram.png)
+![Phoenix architecture on AWS](assets/architecture.png)
 
 ```
 EventBridge Scheduler (daily, 1:00 PM Asia/Kolkata)
