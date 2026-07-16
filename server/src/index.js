@@ -1,6 +1,7 @@
 import { getConfig } from './utils/config.js';
 import { scanRepositories } from './connectors/github/scanner.js';
 import { scoreRepository } from './analysis/healthEngine.js';
+import { analyzeRepositories } from './services/bedrock.js';
 import { saveScores, logRun } from './services/db.js';
 
 async function safeLogRun(entry) {
@@ -35,6 +36,23 @@ export const handler = async (event, context) => {
       console.error(`${repo.fullName.padEnd(45)} scan failed: ${repo.error}`);
     }
 
+    let analysis = { portfolio_summary: null, repos: [] };
+    let analysisOk = true;
+    if (scored.length > 0) {
+      try {
+        analysis = await analyzeRepositories(scored);
+      } catch (err) {
+        analysisOk = false;
+        console.error(`bedrock: analysis failed: ${err.message}`);
+      }
+    }
+
+    const analysisByName = new Map(analysis.repos.map((r) => [r.name, r]));
+
+    if (analysis.portfolio_summary) {
+      console.log(`Portfolio summary: ${analysis.portfolio_summary}`);
+    }
+
     try {
       await saveScores(
         scored.map(({ repo, health }) => ({
@@ -55,8 +73,8 @@ export const handler = async (event, context) => {
               stars: repo.stars,
             },
           },
-          recommendation: null,
-          nextBestAction: null,
+          recommendation: analysisByName.get(repo.name)?.diagnosis ?? null,
+          nextBestAction: analysisByName.get(repo.name)?.next_best_action ?? null,
         }))
       );
       console.log(`db: saved ${scored.length} scores`);
@@ -68,13 +86,20 @@ export const handler = async (event, context) => {
       ? Math.round(scored.reduce((sum, { health }) => sum + health.score, 0) / scored.length)
       : 0;
 
+    const status = analysisOk ? 'success' : 'partial';
     console.log(
-      `Phoenix run finished: ${scored.length} repos scored, ${failed.length} scan failures, avgScore=${avgScore}`
+      `Phoenix run finished: ${scored.length} repos scored, ${failed.length} scan failures, ` +
+        `avgScore=${avgScore}, status=${status}`
     );
 
-    await safeLogRun({ reposScanned: scored.length, status: 'success', error: null });
+    await safeLogRun({ reposScanned: scored.length, status, error: null });
 
-    return { statusCode: 200, reposScanned: scored.length, avgScore };
+    return {
+      statusCode: 200,
+      reposScanned: scored.length,
+      avgScore,
+      portfolioSummary: analysis.portfolio_summary,
+    };
   } catch (err) {
     console.error(`Phoenix run failed: ${err.message}`);
     await safeLogRun({ reposScanned: 0, status: 'failed', error: err.message });
