@@ -1,23 +1,49 @@
 # Phoenix
 
-Phoenix is a personal AI agent that keeps watch over my GitHub repositories so I don't have to. Once a day it wakes up on its own, looks at what changed across my projects, scores the health of each one, asks an LLM what deserves attention, and sends me the result as an email. There is no server to keep running and nothing to remember to do: the whole thing is a single Lambda function on a schedule.
+An autonomous agent that audits my GitHub portfolio every day and emails me what to fix.
 
-## What it does on each run
+Phoenix wakes up on a schedule, scans my repositories, scores each one's health from real signals, asks Amazon Bedrock for a diagnosis and one concrete next action per project, stores the history in MySQL, and delivers the result as an email. No server, no manual step: one Lambda function on an EventBridge schedule.
 
-1. **Scan** — fetches my most recently pushed repositories from the GitHub API (skipping forks and archived repos) and collects signals for each: commits in the last 30 days, open issues and pull requests, latest CI run result, latest release, and the README.
-2. **Score** — a deterministic health engine turns those signals into a 0-100 score per repository, with points for commit recency and volume, CI status, README quality, issue hygiene, and release recency. Problems become human-readable flags like "No commits in 45 days" or "CI failing".
-3. **Bedrock analysis** — all scored repositories go to Amazon Bedrock (Nova Lite) in a single call. The model returns a short diagnosis per repository, one concrete next action for each, and a portfolio-level summary naming the repo that most deserves attention today.
-4. **MySQL** — scores, metrics, and recommendations are written to a MySQL database on RDS, one row per repository per day, so score history builds up over time and each report can show the change since the previous run.
-5. **Email** — an HTML report is sent to me through SES, worst-scoring repository first.
+## Results
 
-If one step degrades — a repo fails to scan, the model returns something unparseable, the email bounces — the run carries on with what it has and records a partial status rather than failing outright.
+The daily report as it lands in my inbox. The subject names the worst repository and the portfolio average; the body opens with an AI-written portfolio summary naming the repo that most deserves attention today:
+
+![Phoenix daily report email with portfolio summary](assets/email-ss-1.png)
+
+Each repository gets a card: health score, change since the previous run, flags from the health engine, a short AI diagnosis, and one next action sized to fit under an hour:
+
+![Repository cards with AI diagnosis and next best action](assets/email-ss-with-ai-generated-response.png)
+
+Cards are sorted worst first, so the email ends on the healthiest projects — here with a score delta of +5 since the previous run:
+
+![End of the report showing score deltas](assets/email-ss-3.png)
+
+Score history accumulating in MySQL, one row per repository per day. Day one ran before AI analysis was wired in (NULL recommendations); day two has diagnosis and next action for every repo — the delta column in the email comes from comparing these runs:
+
+![project_scores table with two days of history](assets/db-ss-project-scores.png)
+
+Every run is also logged with its status and repo count:
+
+![run_log table with successful runs](assets/db-ss-run-logs.png)
+
+## How it works
+
+Each run is a five-step pipeline:
+
+1. **Scan** — fetch the most recently pushed repositories from the GitHub API (forks and archived repos are skipped) and collect signals per repo: commits in the last 30 days, open issues and PRs, latest CI run result, latest release, README length.
+2. **Score** — a deterministic health engine converts the signals into a 0-100 score across six categories: commit recency, commit volume, CI status, README quality, issue hygiene, and release recency. Problems become flags like "No commits in 77 days" or "CI failing".
+3. **Analyze** — all scored repos go to Amazon Bedrock (Nova Lite) in a single Converse API call, which returns a diagnosis per repo, a next best action per repo, and a portfolio-level summary.
+4. **Store** — scores, metrics, and recommendations are upserted into MySQL on RDS, keyed by repo and date, building the history used for day-over-day score deltas.
+5. **Report** — an HTML email (with a plain-text fallback) is rendered and sent through SES.
+
+Every step degrades gracefully: a repo that fails to scan is reported and skipped, a malformed model response falls back to a no-AI report, a database or email failure is logged and recorded as a `partial` run instead of a crash.
 
 ## Architecture
 
 ![Phoenix architecture on AWS](assets/architecture.png)
 
 ```
-EventBridge Scheduler (daily, 1:00 PM Asia/Kolkata)
+EventBridge Scheduler (daily, Asia/Kolkata)
         |
         v
      Lambda (Node.js 22)
@@ -32,68 +58,63 @@ EventBridge Scheduler (daily, 1:00 PM Asia/Kolkata)
                    SES email report
 ```
 
-## Tech stack
+| Component | Choice | Notes |
+|---|---|---|
+| Compute | AWS Lambda, Node.js 22, arm64 | Plain ES modules, no framework |
+| Trigger | EventBridge Scheduler | Cron in the `Asia/Kolkata` timezone |
+| AI analysis | Amazon Bedrock, Nova Lite | Converse API, one call per run |
+| Storage | Amazon RDS, MySQL | Score history and run log |
+| Email | Amazon SES | HTML + plain-text report |
 
-- **AWS Lambda** — Node.js 22, arm64, plain ES modules, no framework
-- **EventBridge Scheduler** — cron `cron(0 13 * * ? *)` with the `Asia/Kolkata` timezone
-- **Amazon RDS** — MySQL 8.0 for score history and run logs
-- **Amazon Bedrock** — Nova Lite via the Converse API
-- **Amazon SES** — delivers the daily report
+## Scheduling and observability
 
-## How it's triggered
+The EventBridge schedule with its execution timezone and upcoming trigger dates (the hour shown here is from a test window; the production schedule is defined in the Terraform):
 
-Phoenix runs unattended. EventBridge Scheduler invokes the Lambda function every day at 1:00 PM IST; no manual step is involved. The scheduler passes a small JSON payload identifying itself as the source, and the function does the rest: scan, score, analyze, store, email.
+![EventBridge Scheduler schedule](assets/eventbridge-trigger-ss.png)
 
-The schedule in EventBridge Scheduler, with the Asia/Kolkata execution timezone and the next trigger dates:
-
-![EventBridge Scheduler schedule for the daily run](assets/eventbridge-schedule-ss.png)
-
-## Results
-
-The report email delivered by SES, received at 01:04 IST — minutes after the scheduled trigger fired (receive time highlighted). The subject names the worst repository and the average score, and the cards are sorted worst first with their flags:
-
-![Phoenix daily report email received in Gmail](assets/email-ss-1.png)
-
-The rest of the same report, scrolled down — scores climb toward the healthier end of the portfolio:
-
-![Phoenix daily report email, remaining repositories](assets/email-ss-2.png)
-
-A scheduled run in CloudWatch: the function starts, scans 13 repositories, analyzes 10, and logs a score line per repo:
+Each trigger produces a CloudWatch log stream — the run below scanned 13 repositories, analyzed 10, and logged one score line per repo:
 
 ![CloudWatch log events from a scheduled run](assets/cloudwatch-triggered-by-eventbridge-ss.png)
 
-The Lambda's log group with the run's log stream:
+![CloudWatch log group for the function](assets/cloudwatch-logs-ss-lambda.png)
 
-![CloudWatch log group for phoenix-agent](assets/cloudwatch-time-log-ss.png)
-
-Daily scores and metrics stored in the `project_scores` table on RDS:
-
-![Daily scores stored in MySQL](assets/db-ss.png)
-
-## Deployed resources
-
-The Lambda function with the project source deployed:
+The deployed function and the verified SES identities:
 
 ![phoenix-agent Lambda function](assets/lambda-ss.png)
 
-The RDS MySQL instance:
-
-![phoenix-db RDS instance](assets/rds-ss.png)
-
-Verified SES identities used for sending the report:
-
 ![Verified SES identities](assets/ses-email-ss.png)
 
-## What the email report contains
+## Configuration
 
-- A subject line that says what matters: either "Phoenix: all projects healthy" or "Phoenix: <repo> needs attention", with the average score
-- A portfolio summary naming the one repository most worth attention today
-- One card per repository, sorted worst first, showing:
-  - the health score (colored green, amber, or red) and its change since the previous run, e.g. `34/100 (-5)`
-  - flags such as "No CI configured" or "12 open issues piling up"
-  - a two-to-three sentence diagnosis of the project's state
-  - one "next best action" completable in under an hour
+All configuration is passed to the Lambda as environment variables:
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `GITHUB_TOKEN` | yes | GitHub personal access token used to scan repositories |
+| `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` | yes | MySQL connection settings |
+| `SES_SENDER` | yes | Verified SES identity used as the sender |
+| `REPORT_RECIPIENT` | yes | Address that receives the report |
+| `BEDROCK_MODEL_ID` | yes | Bedrock model, e.g. `apac.amazon.nova-lite-v1:0` |
+| `BEDROCK_REGION` | no | Overrides the Bedrock region; defaults to the Lambda's region |
+| `BEDROCK_API_KEY` | no | Bedrock API key for cross-account bearer auth; IAM role auth is used when unset |
+
+## Project structure
+
+```
+phoenix-agent/
+  server/
+    src/
+      index.js                  Lambda handler: orchestrates the pipeline
+      connectors/github/        GitHub REST client (native fetch) and scanner
+      analysis/healthEngine.js  Pure scoring function, no I/O
+      services/                 Bedrock, MySQL, and SES clients
+      reports/emailTemplate.js  HTML and plain-text report rendering
+      utils/config.js           Environment-based configuration
+  infra/                        Terraform mirroring the deployed architecture
+  docs/
+  assets/                       Screenshots used in this README
+```
 
 ## Infrastructure
 
-The `infra/` directory contains Terraform that documents the deployed architecture: the Lambda function and its IAM role, the EventBridge schedule, the RDS instance, and the wiring between them. The real deployment was done through the AWS console; the Terraform mirrors it so the setup is reproducible. See `infra/README.md` for prerequisites and caveats before applying it.
+The `infra/` directory contains Terraform that documents the deployed architecture — the Lambda function and its IAM role, the EventBridge schedule, the RDS instance, and the wiring between them. The deployment was done through the AWS console; the Terraform mirrors it so the setup is reproducible from scratch. See [infra/README.md](infra/README.md) for manual prerequisites (SES identity verification, Bedrock model access) and caveats before applying.
