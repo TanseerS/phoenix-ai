@@ -4,6 +4,14 @@ An autonomous agent that audits my GitHub portfolio every day and emails me what
 
 Phoenix wakes up on a schedule, scans my repositories, scores each one's health from real signals, asks Amazon Bedrock for a diagnosis and one concrete next action per project, stores the history in MySQL, and delivers the result as an email. No server, no manual step: one Lambda function on an EventBridge schedule.
 
+## Demo
+
+Full walkthrough of a live run — from the scheduled trigger to the report landing in the inbox. Click to watch:
+
+[![Phoenix project demo video](https://img.youtube.com/vi/E1H0wdBvtQM/maxresdefault.jpg)](https://youtu.be/E1H0wdBvtQM)
+
+The same demo is also available as a file in this repository: [assets/project-demo.mov](assets/project-demo.mov).
+
 ## Results
 
 The daily report as it lands in my inbox. The subject names the worst repository and the portfolio average; the body opens with an AI-written portfolio summary naming the repo that most deserves attention today:
@@ -25,6 +33,12 @@ Score history accumulating in MySQL, one row per repository per day. Day one ran
 Every run is also logged with its status and repo count:
 
 ![run_log table with successful runs](assets/db-ss-run-logs.png)
+
+The portfolio Phoenix watches — the repositories on my GitHub profile, spanning JavaScript, TypeScript, HCL, and C#, public and private:
+
+![GitHub profile repositories scanned by Phoenix](assets/github-repo-ss-1.png)
+
+![More repositories from the scanned portfolio](assets/github-repo-ss-2.png)
 
 ## How it works
 
