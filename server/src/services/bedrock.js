@@ -1,9 +1,22 @@
 import { BedrockRuntimeClient, ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
 
+// Bedrock API key auth (cross-account use): the SDK natively picks up
+// AWS_BEARER_TOKEN_BEDROCK, so it must be set before the client is built.
+const bedrockApiKey = (process.env.BEDROCK_API_KEY ?? '').trim();
+if (bedrockApiKey) {
+  process.env.AWS_BEARER_TOKEN_BEDROCK = bedrockApiKey;
+}
+
 // When BEDROCK_REGION is unset, the SDK falls back to the Lambda's own
 // region via AWS_REGION.
 const bedrockRegion = (process.env.BEDROCK_REGION ?? '').trim();
 const client = new BedrockRuntimeClient(bedrockRegion ? { region: bedrockRegion } : {});
+
+console.log(
+  `bedrock: client created auth=${bedrockApiKey ? 'api-key' : 'iam-role'} ` +
+    `region=${bedrockRegion || process.env.AWS_REGION || 'sdk-default'} ` +
+    `model=${(process.env.BEDROCK_MODEL_ID ?? '').trim() || 'unset'}`
+);
 
 const SYSTEM_PROMPT =
   "You are Phoenix, an engineering advisor reviewing a developer's GitHub portfolio. " +
