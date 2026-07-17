@@ -3,6 +3,9 @@ node_modules/
 *.zip
 .DS_Store
 
+# Demo video is too large for GitHub (>100 MB); hosted on YouTube instead
+assets/project-demo.mov
+
 # Terraform
 *.tfstate
 *.tfstate.*

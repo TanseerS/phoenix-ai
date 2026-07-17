@@ -8,9 +8,9 @@ Phoenix wakes up on a schedule, scans my repositories, scores each one's health 
 
 Full walkthrough of a live run — from the scheduled trigger to the report landing in the inbox. Click to watch:
 
-[![Phoenix project demo video](https://img.youtube.com/vi/E1H0wdBvtQM/maxresdefault.jpg)](https://youtu.be/E1H0wdBvtQM)
+[![Phoenix project demo video](https://img.youtube.com/vi/E1H0wdBvtQM/maxresdefault.jpg)](https://youtu.be/E1H0wdBvtQM?si=GXZ983yfXyHisxax)
 
-The same demo is also available as a file in this repository: [assets/project-demo.mov](assets/project-demo.mov).
+Direct link: [youtu.be/E1H0wdBvtQM](https://youtu.be/E1H0wdBvtQM?si=GXZ983yfXyHisxax)
 
 ## Results
 
